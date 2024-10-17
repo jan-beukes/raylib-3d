@@ -4,5 +4,8 @@ LFLAGS = -lm -lraylib -lpthread -ldl
 
 all: main
 
-main: main.c
-	$(CC) $(CFLAGS) $^ -o $@ $(LFLAGS) 
+main: src/*.c
+	$(CC) $(CFLAGS) $^ -o $@ $(LFLAGS)
+
+run: all
+	./main

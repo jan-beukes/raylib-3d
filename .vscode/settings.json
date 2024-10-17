@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "raymath.h": "c",
+        "rcamera.h": "c",
+        "rlgl.h": "c",
+        "custom_mesh.h": "c"
+    }
+}
