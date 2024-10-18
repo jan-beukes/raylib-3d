@@ -14,30 +14,50 @@
 #define MOUSE_SENS 0.1
 #define TILE_SIZE 10
 
-static int room[20][20] = {
-    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
-    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,1,1,2,2,1,1,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+typedef struct Map {
+    int **walls;
+    Rectangle **colliders;
+    int width;
+    int height;
+} Map;
+
+enum TextureIndex {
+    EMPTY,
+    BRICK,
+    OTHER
 };
 
-void player_movement(Camera *camera, float dt) {
+int texture_from_blue(int b) {
+    switch (b){
+        case 0: return EMPTY;
+        case 255: return BRICK;
+        case 100: return OTHER;
+    }
+}
+
+void init_map(Map *map, Image image) {
+    map->width = image.width;
+    map->height = image.height;
+
+    // Walls array
+    map->walls = calloc(sizeof(int*), image.height);
+    map->colliders = calloc(sizeof(Rectangle*), image.height);
+    for (int i=0; i < image.width; i++){
+        map->walls[i] = calloc(sizeof(int), image.width);
+        map->colliders[i] = calloc(sizeof(Rectangle), image.width);
+
+    }
+    
+    Color *colors= LoadImageColors(image);
+    for (int i=0; i < image.height; i++){
+        for (int j=0; j < image.width; j++){
+            map->walls[i][j] = texture_from_blue(colors[i*image.height + j].b);
+            map->colliders[i][j] = (Rectangle){i*TILE_SIZE, j*TILE_SIZE, TILE_SIZE, TILE_SIZE};
+        }
+    }
+}
+
+void player_movement(Camera *camera, Map map, float dt) {
     //printf("%f %f\n", camera->position.x, camera->position.z);
     Vector3 looking = Vector3Normalize(Vector3Subtract(camera->target, camera->position));
     printf("target: (%f %f)\n", looking.x, looking.z);
@@ -56,8 +76,10 @@ void player_movement(Camera *camera, float dt) {
     UpdateCameraPro(camera, (Vector3){ry, rx, 0}, (Vector3){rotation, 0, 0}, 0);
 }
 
-void draw_room(Model floor, Texture *wall_textures, int texture_count, int width, int length, Vector2 top_left_pos) {
+void draw_map(Model floor, Map map, Texture *wall_textures, Vector2 top_left_pos) {
     // floor/ceiling
+    int width = map.width, length = map.height;
+
     DrawModel(floor, (Vector3){top_left_pos.x+TILE_SIZE*width/2, 0, top_left_pos.y+TILE_SIZE*length/2}, 1, WHITE);
     DrawModelEx(floor, (Vector3){top_left_pos.x+TILE_SIZE*width/2, 4, top_left_pos.y+TILE_SIZE*length/2}, (Vector3){0, 0, 1},
                 180, Vector3One(), WHITE);
@@ -65,12 +87,11 @@ void draw_room(Model floor, Texture *wall_textures, int texture_count, int width
     // Walls
     for (int i = 1; i <= length; i++){
         for (int j = 1; j <= width; j++){
-            if (room[i-1][j-1] > 0){
-                int wall_type = room[i-1][j-1];
-                if (wall_type > texture_count) {printf("wall %d doesnt exist", wall_type); exit(1);}
+            if (map.walls[i-1][j-1] > 0){
+                int wall_tex = map.walls[i-1][j-1] - 1;
 
                 Vector2 pos = Vector2Add(top_left_pos, (Vector2){j*TILE_SIZE - TILE_SIZE/2, i*TILE_SIZE - TILE_SIZE/2});
-                draw_textured_cube(wall_textures[wall_type - 1], (Vector3){pos.x, 2, pos.y}, TILE_SIZE, 4, TILE_SIZE, WHITE);
+                draw_textured_cube(wall_textures[wall_tex], (Vector3){pos.x, 2, pos.y}, TILE_SIZE, 4, TILE_SIZE, WHITE);
             }
         }
     }
@@ -79,8 +100,6 @@ void draw_room(Model floor, Texture *wall_textures, int texture_count, int width
 
 int main() {
     InitWindow(1280, 720, "Gaming");
-
-    const int room_size = 20;
 
     Camera3D camera = {.position = {80, 2.0, 80},
                        .target = {30, 2, -1},
@@ -93,10 +112,13 @@ int main() {
     Texture wall1_texture = LoadTexture("res/wall1.png");
     Texture wall2_texture = LoadTexture("res/wall2.png");
     Texture mario = LoadTexture("res/mario.png");
+    
+    Texture wall_textures[2] = {wall1_texture, wall2_texture};
+    Image map_image = LoadImage("res/map.png");
+    Map map;
+    init_map(&map, map_image);
 
-    Texture walls[2] = {wall1_texture, wall2_texture};
-
-    Mesh plane_mesh = gen_mesh_plane_tiled(room_size*TILE_SIZE, room_size*TILE_SIZE, room_size, room_size);
+    Mesh plane_mesh = gen_mesh_plane_tiled(map.width*TILE_SIZE, map.height*TILE_SIZE, map.width, map.height);
     Model plane_model = LoadModelFromMesh(plane_mesh);
     plane_model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = floor_texture;
 
@@ -121,7 +143,7 @@ int main() {
             }
 
             // Map
-            draw_room(plane_model, walls, 2, room_size, room_size, (Vector2) {-room_size*TILE_SIZE/2,-room_size*TILE_SIZE/2});
+            draw_map(plane_model, map, wall_textures, (Vector2) {-map.width*TILE_SIZE/2,-map.height*TILE_SIZE/2});
 
             EndMode3D();
         }

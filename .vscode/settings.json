@@ -3,6 +3,9 @@
         "raymath.h": "c",
         "rcamera.h": "c",
         "rlgl.h": "c",
-        "custom_mesh.h": "c"
+        "custom_mesh.h": "c",
+        "stdio.h": "c",
+        "raylib.h": "c",
+        "math.h": "c"
     }
 }
