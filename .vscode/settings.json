@@ -6,6 +6,8 @@
         "custom_mesh.h": "c",
         "stdio.h": "c",
         "raylib.h": "c",
-        "math.h": "c"
+        "math.h": "c",
+        "custom_draw.h": "c",
+        "sd-journal.h": "c"
     }
 }
