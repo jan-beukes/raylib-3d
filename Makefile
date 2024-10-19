@@ -3,7 +3,6 @@ CFLAGS = -Wall -Wextra
 LFLAGS = -lm -lraylib -lpthread -ldl
 
 # Directories
-
 SRCS = $(wildcard src/*.c) # wildcard function read all mathing the expression
 OBJS = $(patsubst src/%.c, obj/%.o,$(SRCS)) # $(patsubst <pattern>, <replacement>, <text>)
 
@@ -15,8 +14,8 @@ main: $(OBJS)
 obj/%.o: src/%.c 
 	$(CC) $(CFLAGS) -c $< -o $@ 
 
-terrain: obj/janperlin.o obj/perlin.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS)
+terrain: obj/terrain/janperlin.o obj/terrain/perlin.o
+	$(CC) $(CFLAGS) -o $@ $^ ~/Cloned/raylib/src/libraylib.a -lm
 
 run: all
 	./main

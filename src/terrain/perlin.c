@@ -1,6 +1,6 @@
 #include <raylib.h>
 #include <stdlib.h>
-#include "../lib/stb_perlin.h"
+#include "../../lib/stb_perlin.h"
 
 Image my_perlin_image(int width, int height, int x_off, int y_off, float scale, float lacunarity, float gain, int octaves)
 {
@@ -28,7 +28,6 @@ Image my_perlin_image(int width, int height, int x_off, int y_off, float scale, 
             //   gain       =  0.5   -- relative weighting applied to each successive octave
             //   octaves    =  6     -- number of "octaves" of noise3() to sum
             float p = stb_perlin_fbm_noise3(nx, ny, 1.0f, lacunarity, gain, octaves);
-
             // Clamp between -1.0f and 1.0f
             if (p < -1.0f) p = -1.0f;
             if (p > 1.0f) p = 1.0f;
