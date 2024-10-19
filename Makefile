@@ -15,8 +15,8 @@ main: $(OBJS)
 obj/%.o: src/%.c 
 	$(CC) $(CFLAGS) -c $< -o $@ 
 
-terain: obj/terain.o
-	$(CC) $(CFLAGS) $^ -o $@ $(LFLAGS)
+terrain: obj/janperlin.o obj/perlin.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS)
 
 run: all
 	./main

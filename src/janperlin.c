@@ -3,6 +3,7 @@
 #include <rlgl.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "perlin.h"
 
 #define GRAY_VALUE(c) ((float)(c.r + c.g + c.b)/3.0f)
 
@@ -20,7 +21,7 @@ Color *GetImageData(Image image)
 
 // Function to create a plane mesh with heights from a Perlin noise image
 // Function to calculate normals and generate mesh
-Mesh gen_mesh_terrain(Image heightmap, Vector3 size)
+Mesh gen_mesh_terrain(Image heightmap, float max_height)
 {
     #define GRAY_VALUE(c) ((float)(c.r + c.g + c.b)/3.0f)
 
@@ -47,7 +48,7 @@ Mesh gen_mesh_terrain(Image heightmap, Vector3 size)
     int nCounter = 0;   // Normal counter
 
     // Scale factors for heightmap dimensions and vertex heights
-    Vector3 scaleFactor = { size.x / (mapX - 1), size.y, size.z / (mapZ - 1) };
+    Vector3 scaleFactor = {1, max_height, 1};
 
     Vector3 vA, vB, vC, vN;
 
@@ -57,15 +58,15 @@ Mesh gen_mesh_terrain(Image heightmap, Vector3 size)
         {
             // First triangle (vA, vB, vC)
             mesh.vertices[vCounter]     = (float)x * scaleFactor.x;
-            mesh.vertices[vCounter + 1] = pow(GRAY_VALUE(pixels[x + z * mapX])/255, 3) * scaleFactor.y;
+            mesh.vertices[vCounter + 1] = pow(GRAY_VALUE(pixels[(int) (x + z * mapX)])/255, 3) * scaleFactor.y;
             mesh.vertices[vCounter + 2] = (float)z * scaleFactor.z;
 
             mesh.vertices[vCounter + 3] = (float)x * scaleFactor.x;
-            mesh.vertices[vCounter + 4] = pow(GRAY_VALUE(pixels[x + (z + 1) * mapX])/255, 3) * scaleFactor.y;
+            mesh.vertices[vCounter + 4] = pow(GRAY_VALUE(pixels[(int) (x + (z + 1) * mapX)])/255, 3) * scaleFactor.y;
             mesh.vertices[vCounter + 5] = (float)(z + 1) * scaleFactor.z;
 
             mesh.vertices[vCounter + 6] = (float)(x + 1) * scaleFactor.x;
-            mesh.vertices[vCounter + 7] = pow(GRAY_VALUE(pixels[(x + 1) + z * mapX])/255, 3) * scaleFactor.y;
+            mesh.vertices[vCounter + 7] = pow(GRAY_VALUE(pixels[(int) ((x + 1) + z * mapX)])/255, 3) * scaleFactor.y;
             mesh.vertices[vCounter + 8] = (float)z * scaleFactor.z;
 
             // Second triangle (same as the second part in GenMeshHeightmap)
@@ -78,7 +79,7 @@ Mesh gen_mesh_terrain(Image heightmap, Vector3 size)
             mesh.vertices[vCounter + 14] = mesh.vertices[vCounter + 5];
 
             mesh.vertices[vCounter + 15] = (float)(x + 1) * scaleFactor.x;
-            mesh.vertices[vCounter + 16] = pow(GRAY_VALUE(pixels[(x + 1) + (z + 1) * mapX])/255, 3) * scaleFactor.y;
+            mesh.vertices[vCounter + 16] = pow(GRAY_VALUE(pixels[(int) ((x + 1) + (z + 1) * mapX)])/255, 3) * scaleFactor.y;
             mesh.vertices[vCounter + 17] = (float)(z + 1) * scaleFactor.z;
 
             vCounter += 18; // Move to the next set of vertices
@@ -132,6 +133,33 @@ Mesh gen_mesh_terrain(Image heightmap, Vector3 size)
     return mesh;
 }
 
+void color_noise(Image *noise_image) {
+    // altered colored perlin noise image
+    int gray_threshold = 120;
+
+    Color *pixels = LoadImageColors(*noise_image);
+    for (int i=0; i< noise_image->width * noise_image->height; i++){
+        int x = i % noise_image->width;
+        int y = i / noise_image->width;
+        int gray = pixels[i].r;
+        Color my_color;
+
+        int thresh = 0;
+        if (gray >= gray_threshold) {
+            my_color = GRAY;
+            thresh = 255;
+        } else {
+            thresh = gray_threshold;
+            my_color = DARKGREEN;
+            gray = gray > 60 ? gray : 60;
+        }
+
+        my_color = ColorLerp(ColorBrightness(my_color, -1) , my_color, (float)gray/thresh);
+        ImageDrawPixel(noise_image, x, y, my_color);
+        
+    }
+}
+
 int main(void)
 {
     const int screenWidth = 1280;
@@ -139,40 +167,32 @@ int main(void)
 
     InitWindow(screenWidth, screenHeight, "Perlin Noise Plane");
 
+
+    // Create the mesh
+    int width = 800, length = 800;
+    int max_height = 200;
+    float map_scale = 0.1;
+    Image images[4];
+    Mesh planes[4];
+    Model models[4]; 
+
+    for (int i = 0; i < 4; i++){
+        int x = i % 2;
+        int y = i/2; 
+        images[i] = my_perlin_image(width, length, x*(width-1), y*(length-1), 2, 2, 0.6, 6);
+        planes[i] = gen_mesh_terrain(images[i], max_height);
+        models[i] = LoadModelFromMesh(planes[i]);
+        color_noise(&images[i]);
+        models[i].materials[0].maps[MATERIAL_MAP_ALBEDO].texture = LoadTextureFromImage(images[i]);
+    }
+    ExportImage(images[0], "noise.png");
+
     Camera camera = {0};
-    camera.position = (Vector3){0.0f, 100.0f, 0.0f};
-    camera.target = (Vector3){0.0f, 50.0f, -1.0f};
+    camera.position = (Vector3){0.0f, max_height*map_scale, 0.0f};
+    camera.target = (Vector3){0.0f,  max_height*map_scale, -1.0f};
     camera.up = (Vector3){0.0f, 1.0f, 0.0f};
     camera.fovy = 60.0f;
     // camera.type = CAMERA_PERSPECTIVE;
-
-    // Create the mesh
-    int width = 800, length = 800, scale = 8;
-    int max_height = 60;
-    Image noiseImage = GenImagePerlinNoise(width, length, 0, 0, (float) scale);
-    ExportImage(noiseImage, "noise.png");
-    Mesh plane = gen_mesh_terrain(noiseImage, (Vector3){width, max_height, length});
-    Model model = LoadModelFromMesh(plane);
-    
-    // altered colored perlin noise image
-    int count = 0;
-    float white_threshold = 150;
-    Color my_color = VIOLET;
-
-    Color *pixels = LoadImageColors(noiseImage);
-    for (int i=0; i< noiseImage.width * noiseImage.height; i++){
-        int x = i % noiseImage.width;
-        int y = i / noiseImage.width;
-        if (pixels[i].r < white_threshold){
-            int gray = pixels[i].r;
-            Vector3 c_vec = Vector3Normalize((Vector3) {my_color.r, my_color.g, my_color.b});
-            Color color = {(short)(c_vec.x*gray), (short)(c_vec.y*gray), (short)(c_vec.z*gray), 255};
-
-            ImageDrawPixel(&noiseImage, x, y, color);
-        }
-        
-    }
-    model.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = LoadTextureFromImage(noiseImage);
 
     DisableCursor();
     while (!WindowShouldClose())
@@ -191,10 +211,15 @@ int main(void)
         }
 
         BeginDrawing();
-        ClearBackground((Color){20, 20, 20});
+        ClearBackground(SKYBLUE);
 
         BeginMode3D(camera);
-        DrawModel(model, (Vector3){-width/2, 0, -length/2}, 1.0f, WHITE);
+        for (int i = 0; i < 4; i++) {
+            int x = i % 2 == 0 ? -1 : 1;
+            int y = i/2 < 1 ? -1 : 1;
+            DrawModel(models[i], (Vector3){x*width*map_scale/2 - x*map_scale, 0, y*length*map_scale/2 - y*map_scale}, map_scale, WHITE);
+        }
+
         EndMode3D();
 
         DrawFPS(10, 10);
@@ -202,7 +227,7 @@ int main(void)
         EndDrawing();
     }
 
-    UnloadModel(model);
+    for (int i = 0; i < 4; i++) UnloadModel(models[i]); 
     CloseWindow();
 
     return 0;
