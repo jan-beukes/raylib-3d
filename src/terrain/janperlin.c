@@ -58,8 +58,8 @@ int main(void)
     Texture color_map = LoadTextureFromImage(image);
 
     Camera camera = {0};
-    camera.position = (Vector3){0.0f, max_height*2, 0.0f};
-    camera.target = (Vector3){0.0f,  max_height/2, -1.0f};
+    camera.position = (Vector3){0.0f, max_height*2, 0.1f}; // Forward vector is zero if target (x,z) is same
+    camera.target = (Vector3){0.0f,  max_height/2, 0.0f};
     camera.up = (Vector3){0.0f, 1.0f, 0.0f};
     camera.fovy = 60.0f;
     // camera.type = CAMERA_PERSPECTIVE;
