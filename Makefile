@@ -14,7 +14,7 @@ main: $(OBJS)
 obj/%.o: src/%.c 
 	$(CC) $(CFLAGS) -c $< -o $@ 
 
-jan:
+jan: terrain/*.c
 	$(CC) $(CFLAGS) -o $@ terrain/*.c ~/Cloned/raylib/src/libraylib.a -lm
 
 run: all
