@@ -1,6 +1,7 @@
 import pyray as rl
 from pyray import KeyboardKey as K
 import cv2
+import math
 import time
 
 def get_image_from_frame(frame: cv2.Mat) -> rl.Image:
@@ -13,22 +14,27 @@ def get_image_from_frame(frame: cv2.Mat) -> rl.Image:
 def main():
     WIDTH = 640
     HEIGHT = 480
+    CAM_TIME = 1/30
     
     rl.init_window(1280, 720, "THING")
     video = cv2.VideoCapture(0)
-    rl.set_target_fps(144)
+    #rl.set_target_fps(144)
     
     mario = rl.load_image("res/mario.png")
-    rl.image_resize(mario, 1280, 720)
     mario_text = rl.load_texture_from_image(mario)
+    mario_plane: rl.Model = rl.load_model_from_mesh(rl.gen_mesh_plane(WIDTH, WIDTH, 10, 10))
+    mario_plane.materials[0].maps[0].texture = mario_text
+
 
     max_height = 200
-    camera: rl.Camera3D = rl.Camera3D(rl.Vector3(0,max_height,0), rl.Vector3(0, 0,-1), 
+    camera: rl.Camera3D = rl.Camera3D(rl.Vector3(0,0,0), rl.Vector3(0, 0,-1), 
                 rl.Vector3(0, 1, 0), 60.0, rl.CameraProjection.CAMERA_PERSPECTIVE)
     rl.disable_cursor()
     
     DUDE_SPEED = 30
     # MAIN LOOP
+    last_capture = 0
+    texture, model, ray_image = None, None, None
     while(not rl.window_should_close()):
         # Move
         dt = rl.get_frame_time()
@@ -51,6 +57,12 @@ def main():
             camera.target.y -= speed*dt
         
         # Capture
+        # Free previous
+        if texture and model and ray_image:
+            rl.unload_texture(texture)
+            rl.unload_model(model)
+            rl.unload_image(ray_image)
+        
         ret, frame = video.read()
         if not ret:
             print("WHAT")
@@ -66,19 +78,31 @@ def main():
         
         # ---Drawing---
         rl.begin_drawing()
-        rl.clear_background(rl.BLACK)
-        rl.draw_texture(mario_text, 0, 0, rl.WHITE)
+        rl.clear_background(rl.SKYBLUE)
+        #rl.draw_texture(mario_text, 0, 0, rl.WHITE)
         
         rl.begin_mode_3d(camera)
         
-        pos = rl.Vector3(-WIDTH, 0, -HEIGHT)
-        rl.draw_model(model, pos, 1, rl.WHITE)
-        pos = rl.Vector3(0, 0, 0)
-        rl.draw_model(model, pos, 1, rl.WHITE)
+        # DUUUUUUUUDE
         pos = rl.Vector3(0, 0, -HEIGHT)
+        transform = rl.matrix_translate(-WIDTH/2, 0, -HEIGHT/2)
+        transform = rl.matrix_multiply(transform, rl.matrix_rotate_x(math.pi/2))
+
+        model.transform = transform
         rl.draw_model(model, pos, 1, rl.WHITE)
-        pos = rl.Vector3(-WIDTH, 0, 0)
-        rl.draw_model(model, pos, 1, rl.WHITE)
+        
+        model.transform = rl.matrix_multiply(transform, rl.matrix_rotate_y(math.pi))
+        rl.draw_model(model, rl.Vector3(0, 0, HEIGHT - max_height), 1, rl.WHITE)
+
+        model.transform = rl.matrix_multiply(transform, rl.matrix_rotate_y(math.pi/2))
+        rl.draw_model(model, rl.Vector3(-HEIGHT + max_height/2, 0, -max_height/2), 1, rl.WHITE)
+        
+        model.transform = rl.matrix_multiply(transform, rl.matrix_rotate_y(-math.pi/2))
+        rl.draw_model(model, rl.Vector3(HEIGHT - max_height/2, 0, -max_height/2), 1, rl.WHITE)
+
+        # Plane
+        rl.draw_model(mario_plane, rl.Vector3(0,-HEIGHT/2, -max_height/2), 1, rl.WHITE)
+        rl.draw_model_ex(mario_plane, rl.Vector3(0, HEIGHT/2, -max_height/2), rl.Vector3(1,0,0), 180, rl.vector3_one(), rl.WHITE)
         
         rl.end_mode_3d()
 
@@ -88,10 +112,6 @@ def main():
         rl.draw_text(text, 10, 30, 20, rl.RAYWHITE)
         rl.end_drawing()
         # ---------------
-        
-        rl.unload_texture(texture)
-        rl.unload_model(model)
-        rl.unload_image(ray_image)
         
     rl.close_window()
 
