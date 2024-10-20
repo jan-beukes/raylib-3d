@@ -14,8 +14,8 @@ main: $(OBJS)
 obj/%.o: src/%.c 
 	$(CC) $(CFLAGS) -c $< -o $@ 
 
-terrain: obj/terrain/janperlin.o obj/terrain/perlin.o
-	$(CC) $(CFLAGS) -o $@ $^ ~/Cloned/raylib/src/libraylib.a -lm
+jan:
+	$(CC) $(CFLAGS) -o $@ terrain/*.c ~/Cloned/raylib/src/libraylib.a -lm
 
 run: all
 	./main

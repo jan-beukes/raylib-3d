@@ -3,26 +3,27 @@ from pyray import KeyboardKey as K
 import cv2
 import time
 
-
-
 def get_image_from_frame(frame: cv2.Mat) -> rl.Image:
-    height = len(frame)
-    width = len(frame[0])
+    height = frame.shape[0]
+    width = frame.shape[1]
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    image = rl.Image(frame.tobytes(),width, height, 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8)
+    image = rl.image_copy(rl.Image(frame.tobytes(), width, height, 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8))
     return image
-
+    
 def main():
-    WIDTH = 200
-    HEIGHT = 150
-    CAM_FPS = 30
+    WIDTH = 640
+    HEIGHT = 480
+    
     rl.init_window(1280, 720, "THING")
     video = cv2.VideoCapture(0)
     rl.set_target_fps(144)
+    
+    mario = rl.load_image("res/mario.png")
+    rl.image_resize(mario, 1280, 720)
+    mario_text = rl.load_texture_from_image(mario)
 
-    max_height = 50
-
-    camera: rl.Camera3D = rl.Camera3D(rl.Vector3(0,3*max_height,0), rl.Vector3(0,max_height/2,-1), 
+    max_height = 200
+    camera: rl.Camera3D = rl.Camera3D(rl.Vector3(0,max_height,0), rl.Vector3(0, 0,-1), 
                 rl.Vector3(0, 1, 0), 60.0, rl.CameraProjection.CAMERA_PERSPECTIVE)
     rl.disable_cursor()
     
@@ -50,38 +51,47 @@ def main():
             camera.target.y -= speed*dt
         
         # Capture
-        current_time = time.time()
-        #if current_time - last_capture >= (1/CAM_FPS):
         ret, frame = video.read()
         if not ret:
             print("WHAT")
             exit(1)
         frame = cv2.resize(frame, (WIDTH, HEIGHT))
         ray_image = get_image_from_frame(frame) 
-        last_capture = time.time()
-        # Mesh
-
-        model = rl.load_model_from_mesh(
-                rl.gen_mesh_heightmap(ray_image, rl.Vector3(WIDTH, max_height, WIDTH)))
         texture = rl.load_texture_from_image(ray_image)
+        rl.image_color_invert(ray_image)
+        # Mesh
+        mesh = rl.gen_mesh_heightmap(ray_image, rl.Vector3(WIDTH, max_height, HEIGHT))
+        model = rl.load_model_from_mesh(mesh)
         model.materials[0].maps[rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO].texture = texture
         
         # ---Drawing---
         rl.begin_drawing()
-        rl.clear_background(rl.RAYWHITE)
+        rl.clear_background(rl.BLACK)
+        rl.draw_texture(mario_text, 0, 0, rl.WHITE)
         
         rl.begin_mode_3d(camera)
         
-        rl.draw_model(model, rl.Vector3(-WIDTH/2, 0, -HEIGHT/2), 1, rl.WHITE)
+        pos = rl.Vector3(-WIDTH, 0, -HEIGHT)
+        rl.draw_model(model, pos, 1, rl.WHITE)
+        pos = rl.Vector3(0, 0, 0)
+        rl.draw_model(model, pos, 1, rl.WHITE)
+        pos = rl.Vector3(0, 0, -HEIGHT)
+        rl.draw_model(model, pos, 1, rl.WHITE)
+        pos = rl.Vector3(-WIDTH, 0, 0)
+        rl.draw_model(model, pos, 1, rl.WHITE)
         
         rl.end_mode_3d()
-        
+
         # rl.draw_texture_ex(rl.load_texture_from_image(ray_image), rl.Vector2(0, 0),0, 2, rl.WHITE)
         rl.draw_fps(10, 10)
-        text = f"{camera.position.y}, {camera.position.z}"
-        rl.draw_text(text, 10, 30, 20, rl.BLACK)
+        text = f"Image: {ray_image.width} {ray_image.height}"
+        rl.draw_text(text, 10, 30, 20, rl.RAYWHITE)
         rl.end_drawing()
         # ---------------
+        
+        rl.unload_texture(texture)
+        rl.unload_model(model)
+        rl.unload_image(ray_image)
         
     rl.close_window()
 
