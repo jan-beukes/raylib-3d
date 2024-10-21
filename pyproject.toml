@@ -10,6 +10,7 @@ package-mode = false
 python = "^3.12"
 opencv-python = "^4.10.0.84"
 raylib = "^5.0.0.4"
+pygame = "^2.6.1"
 
 
 [build-system]
