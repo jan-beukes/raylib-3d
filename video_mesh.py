@@ -2,6 +2,7 @@ import pyray as rl
 from pyray import KeyboardKey as K
 import cv2
 import math
+import random
 import time
 
 def get_image_from_frame(frame: cv2.Mat) -> rl.Image:
@@ -14,11 +15,10 @@ def get_image_from_frame(frame: cv2.Mat) -> rl.Image:
 def main():
     WIDTH = 640
     HEIGHT = 480
-    CAM_TIME = 1/30
     
     rl.init_window(1280, 720, "THING")
     video = cv2.VideoCapture(0)
-    #rl.set_target_fps(144)
+    rl.set_target_fps(25)
     
     mario = rl.load_image("res/mario.png")
     mario_text = rl.load_texture_from_image(mario)
@@ -26,7 +26,7 @@ def main():
     mario_plane.materials[0].maps[0].texture = mario_text
 
 
-    max_height = 200
+    max_height = HEIGHT/2
     camera: rl.Camera3D = rl.Camera3D(rl.Vector3(0,0,0), rl.Vector3(0, 0,-1), 
                 rl.Vector3(0, 1, 0), 60.0, rl.CameraProjection.CAMERA_PERSPECTIVE)
     rl.disable_cursor()
@@ -48,7 +48,6 @@ def main():
         dr = rl.Vector3((rl.is_key_down(K.KEY_W) - rl.is_key_down(K.KEY_S)) * speed * dt,
                       (rl.is_key_down(K.KEY_D) - rl.is_key_down(K.KEY_A)) * speed * dt, 0)
         rl.update_camera_pro(camera, dr, rot, 0)
-
         if (rl.is_key_down(K.KEY_SPACE)):
             camera.position.y += speed*dt
             camera.target.y += speed*dt
@@ -70,6 +69,7 @@ def main():
         frame = cv2.resize(frame, (WIDTH, HEIGHT))
         ray_image = get_image_from_frame(frame) 
         texture = rl.load_texture_from_image(ray_image)
+        mario_plane.materials[0].maps[0].texture = texture
         rl.image_color_invert(ray_image)
         # Mesh
         mesh = rl.gen_mesh_heightmap(ray_image, rl.Vector3(WIDTH, max_height, HEIGHT))

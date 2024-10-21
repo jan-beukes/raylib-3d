@@ -153,7 +153,7 @@ int main(void)
 
     // Create the mesh
     int width = 400, length = 400;
-    int max_height = 100;
+    int max_height = 75;
     float scale = 1;
     Image image;
     Mesh plane;
