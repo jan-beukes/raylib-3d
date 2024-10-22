@@ -99,6 +99,47 @@ float get_terrain_height(float x, float z, const float* vertices, int rows, int 
     return height;
 }
 
+bool collide_with_heightmap(Ray ray, Vector3 *collision, Image heightmap_image, float terrain_scale, Vector3 terrain_pos) {
+    int width = heightmap_image.width;
+    int height = heightmap_image.height;
+    Color *heightmap_data = LoadImageColors(heightmap_image);  // Assuming grayscale heightmap
+
+    // Ray step parameters
+    float step_size = 0.1f; // The distance to move along the ray each iteration (adjust for precision)
+    float max_distance = 1000.0f; // Maximum distance to march along the ray
+
+    Vector3 ray_pos = ray.position;
+    Vector3 ray_dir = Vector3Normalize(ray.direction); // Normalize the direction
+
+    for (float distance = 0; distance < max_distance; distance += step_size) {
+        // Move along the ray
+        ray_pos = Vector3Add(ray.position, Vector3Scale(ray_dir, distance));
+
+        // Convert current ray position to heightmap coordinates
+        float terrain_x = (ray_pos.x - terrain_pos.x);
+        float terrain_z = (ray_pos.z - terrain_pos.z);
+
+        // Check if we're within the bounds of the heightmap
+        if (terrain_x >= 0 && terrain_x < width && terrain_z >= 0 && terrain_z < height) {
+            // Get heightmap value at the current terrain coordinates
+            int ix = (int)terrain_x;
+            int iz = (int)terrain_z;
+            float terrainHeight = GRAY_VALUE(heightmap_data[iz * width + ix]) / 255.0f * terrain_scale + terrain_pos.y;
+
+            // If the ray's y-position is below the terrain height, we've hit the terrain
+            if (ray_pos.y <= terrainHeight) {
+                UnloadImageColors(heightmap_data);  // Free the heightmap colors
+                *collision = ray_pos;  // Return the collision point
+                return true;
+            }
+        }
+    }
+
+    UnloadImageColors(heightmap_data);  // Free the heightmap colors
+    *collision = (Vector3){0};  // No collision found
+    return false;
+}
+
 void move_player(Player *player, Terrain terrain, float dt, float dude_speed) {
     float speed;
     bool floor = false;
@@ -187,8 +228,6 @@ int main(void)
 
     Texture color_map = LoadTextureFromImage(image);
 
-    BoundingBox terrain_box = GetModelBoundingBox(model);
-
     Camera camera = {0};
     camera.position = (Vector3){0.0f, max_height, -1.0f}; // Forward vector is zero if target (x,z) is same
     camera.target = (Vector3){0.0f,  max_height/2, 0.0f};
@@ -215,10 +254,12 @@ int main(void)
         ray.position = camera.position;
         ray.direction = GetCameraForward(&camera);
 
-        RayCollision collision = GetRayCollisionMesh(ray, *terrain.mesh, terrain.model->transform);
+        Vector3 collision;
+        bool collided = collide_with_heightmap(ray, &collision, image, max_height,
+                            (Vector3){-width*scale/2, 0, -length*scale/2});
 
-        if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && collision.hit){
-            blocks[count++] = (Block){collision.point, (Vector3){4, 4, 4}};
+        if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && collided){
+            blocks[count++] = (Block){collision, (Vector3){4, 4, 4}};
         }
 
         BeginDrawing();
@@ -227,15 +268,15 @@ int main(void)
             BeginMode3D(camera);
             DrawModel(model, Vector3Zero(), 1, WHITE);
 
-            DrawCube(collision.point, 4, 4, 4, RED);
+            DrawSphere(collision, 4, RED);
             for (int i = 0; i < count; i++) {
-                DrawCubeV(blocks[i].pos, blocks[i].size, RED);
+                DrawSphere(blocks[i].pos, blocks[i].size.x, RED);
             }
             EndMode3D();
             
             DrawText(TextFormat("Position (%.1f, %.1f)", player.position->x, player.position->z), 10, 40, 20, BLUE);
             DrawText(TextFormat("ON FLOOR: %s", debug), 10, 70, 20, BLUE);
-            DrawText(TextFormat("Raycast: (%f, %f, %f)", collision.point.x, collision.point.y, collision.point.z),
+            DrawText(TextFormat("Raycast: (%f, %f, %f)", collision.x, collision.y, collision.z),
                    10, 100, 20, BLUE);
             DrawFPS(10, 10);
             float texture_scale = 200.0/width;
