@@ -74,9 +74,7 @@ def main():
     can_fly_ptr = rl.ffi.new("bool *", False)
     can_fly = can_fly_ptr[0]
     y_velocity = 0
-    texture, model, ray_image = None, None, None
-    
-    
+    texture, model, ray_image = None, None, None  
         
     # MAIN LOOP
     last_capture = 0

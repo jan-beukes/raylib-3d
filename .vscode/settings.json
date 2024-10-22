@@ -10,6 +10,7 @@
         "custom_draw.h": "c",
         "sd-journal.h": "c",
         "stb_perlin.h": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "perlin.h": "c"
     }
 }

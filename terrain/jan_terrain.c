@@ -3,6 +3,7 @@
 #include <rlgl.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <rcamera.h>
 #include "perlin.h"
 
 #define GRAY_VALUE(c) ((float)(c.r + c.g + c.b)/3.0f)
@@ -26,6 +27,12 @@ typedef struct Terrain {
     int length;
 
 } Terrain;
+
+typedef struct Block {
+    Vector3 pos;
+    Vector3 size;
+
+} Block;
 
 char *debug;
 int jump_force = JUMP;
@@ -113,7 +120,7 @@ void move_player(Player *player, Terrain terrain, float dt, float dude_speed) {
     float mesh_height = get_terrain_height(player_pos.x, player_pos.z, terrain.mesh->vertices,
                                     terrain.length, terrain.width, 1);
     
-    // subtract epsilon for more leaniant jumping
+    // subtract epsilon for more lenient jumping
     float epsilon = 1;
     floor = mesh_height != -1 && player_pos.y - player->height - epsilon <= mesh_height; 
     char *text = floor == 1 ? "true" : "false";
@@ -148,7 +155,7 @@ int main(void)
     debug = malloc(255*sizeof(char));
 
     InitWindow(screenWidth, screenHeight, "EPIC MAN");
-    SetTargetFPS(120);
+    //SetTargetFPS(120);
     rlDisableBackfaceCulling();
 
     // Create the mesh
@@ -175,6 +182,9 @@ int main(void)
         .length = length
     };
 
+    Block blocks[255];
+    int count = 0;
+
     Texture color_map = LoadTextureFromImage(image);
 
     BoundingBox terrain_box = GetModelBoundingBox(model);
@@ -198,20 +208,39 @@ int main(void)
     {
         float dt = GetFrameTime();
 
+        // Player
         move_player(&player, terrain, dt, dude_speed);
 
+        Ray ray;
+        ray.position = camera.position;
+        ray.direction = GetCameraForward(&camera);
+
+        RayCollision collision = GetRayCollisionMesh(ray, *terrain.mesh, terrain.model->transform);
+
+        if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && collision.hit){
+            blocks[count++] = (Block){collision.point, (Vector3){4, 4, 4}};
+        }
+
         BeginDrawing();
-        ClearBackground(RAYWHITE);
+        {
+            ClearBackground(SKYBLUE);
+            BeginMode3D(camera);
+            DrawModel(model, Vector3Zero(), 1, WHITE);
 
-        BeginMode3D(camera);
-        DrawModel(model, Vector3Zero(), 1, WHITE);
-
-        EndMode3D();
-        DrawText(TextFormat("Position (%.1f, %.1f)", player.position->x, player.position->z), 10, 40, 20, BLUE);
-        DrawText(TextFormat("ON FLOOR: %s", debug), 10, 70, 20, BLUE);
-        DrawFPS(10, 10);
-        float texture_scale = 200.0/width;
-        DrawTextureEx(color_map, (Vector2){screenWidth-color_map.width*texture_scale, 0}, 0, texture_scale, WHITE);
+            DrawCube(collision.point, 4, 4, 4, RED);
+            for (int i = 0; i < count; i++) {
+                DrawCubeV(blocks[i].pos, blocks[i].size, RED);
+            }
+            EndMode3D();
+            
+            DrawText(TextFormat("Position (%.1f, %.1f)", player.position->x, player.position->z), 10, 40, 20, BLUE);
+            DrawText(TextFormat("ON FLOOR: %s", debug), 10, 70, 20, BLUE);
+            DrawText(TextFormat("Raycast: (%f, %f, %f)", collision.point.x, collision.point.y, collision.point.z),
+                   10, 100, 20, BLUE);
+            DrawFPS(10, 10);
+            float texture_scale = 200.0/width;
+            DrawTextureEx(color_map, (Vector2){screenWidth-color_map.width*texture_scale, 0}, 0, texture_scale, WHITE);
+        }
         EndDrawing();
     }
 
