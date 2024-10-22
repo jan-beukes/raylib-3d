@@ -10,12 +10,15 @@
 #define MIN(X, Y) (X) < (Y) ? (X) : (Y) 
 #define MAX(X, Y) (X) > (Y) ? (X) : (Y)
 
+#define SCREEN_WIDTH 1280
+#define SCREEN_HEIGHT 720
+
 #define GRAVITY 100.0
 #define JUMP 60
 
 typedef struct Player {
     float height;
-    Vector3 *position; // center y
+    Vector3 *position;
     Camera3D *camera;
     float vel_y;
 } Player;
@@ -25,12 +28,15 @@ typedef struct Terrain {
     Mesh *mesh;
     int width;
     int length;
+    float resolution;
 
 } Terrain;
 
 typedef struct Block {
     Vector3 pos;
     Vector3 size;
+    BoundingBox bounds;
+    Color color;
 
 } Block;
 
@@ -99,14 +105,14 @@ float get_terrain_height(float x, float z, const float* vertices, int rows, int 
     return height;
 }
 
-bool collide_with_heightmap(Ray ray, Vector3 *collision, Image heightmap_image, float terrain_scale, Vector3 terrain_pos) {
+bool raycast_heightmap(Ray ray, Vector3 *collision, Image heightmap_image, int max_height, float terrain_res, Vector3 terrain_pos) {
     int width = heightmap_image.width;
     int height = heightmap_image.height;
     Color *heightmap_data = LoadImageColors(heightmap_image);  // Assuming grayscale heightmap
 
     // Ray step parameters
     float step_size = 0.1f; // The distance to move along the ray each iteration (adjust for precision)
-    float max_distance = 1000.0f; // Maximum distance to march along the ray
+    float max_distance = 2*width; // Maximum distance to march along the ray
 
     Vector3 ray_pos = ray.position;
     Vector3 ray_dir = Vector3Normalize(ray.direction); // Normalize the direction
@@ -116,15 +122,15 @@ bool collide_with_heightmap(Ray ray, Vector3 *collision, Image heightmap_image, 
         ray_pos = Vector3Add(ray.position, Vector3Scale(ray_dir, distance));
 
         // Convert current ray position to heightmap coordinates
-        float terrain_x = (ray_pos.x - terrain_pos.x);
-        float terrain_z = (ray_pos.z - terrain_pos.z);
+        float terrain_x = (ray_pos.x - terrain_pos.x)*terrain_res;
+        float terrain_z = (ray_pos.z - terrain_pos.z)*terrain_res;
 
         // Check if we're within the bounds of the heightmap
         if (terrain_x >= 0 && terrain_x < width && terrain_z >= 0 && terrain_z < height) {
             // Get heightmap value at the current terrain coordinates
             int ix = (int)terrain_x;
             int iz = (int)terrain_z;
-            float terrainHeight = GRAY_VALUE(heightmap_data[iz * width + ix]) / 255.0f * terrain_scale + terrain_pos.y;
+            float terrainHeight = GRAY_VALUE(heightmap_data[iz * width + ix]) / 255.0f * max_height + terrain_pos.y;
 
             // If the ray's y-position is below the terrain height, we've hit the terrain
             if (ray_pos.y <= terrainHeight) {
@@ -140,36 +146,73 @@ bool collide_with_heightmap(Ray ray, Vector3 *collision, Image heightmap_image, 
     return false;
 }
 
-void move_player(Player *player, Terrain terrain, float dt, float dude_speed) {
+void move_player(Player *player, Terrain terrain, Block *blocks, int block_count, float dt, float dude_speed) {
     float speed;
     bool floor = false;
+    
     if (IsKeyDown(KEY_LEFT_SHIFT)){
         speed = dude_speed*4;
     }else {
         speed = dude_speed;
     }
-
     Vector3 rot = {GetMouseDelta().x*0.1, GetMouseDelta().y*0.1, 0};
     
     Vector3 dr = {(IsKeyDown(KEY_W) - IsKeyDown(KEY_S)) * speed * dt,
                 (IsKeyDown(KEY_D) - IsKeyDown(KEY_A)) * speed * dt, 0};
 
+    // Block Collsion
+    for (int i = 0; i < block_count; i++) {
+        // Top collision
+        Vector3 feet_pos = Vector3Add(Vector3Subtract(*player->position, (Vector3){0, player->height, 0}),
+                                                (Vector3){0,player->vel_y*dt, 0});
+        if (CheckCollisionBoxSphere(blocks[i].bounds, feet_pos, 0.1)) {
+            floor = true;
+        }
+        if (CheckCollisionBoxSphere(blocks[i].bounds, 
+                  Vector3Add(*player->position,(Vector3){0,player->height/2, 0}), 0.1)) {
+            floor = true;
+        }
+
+        Vector3 move_vec = Vector3Add(Vector3Scale(GetCameraForward(player->camera), dr.x),
+                                     Vector3Scale(GetCameraRight(player->camera), dr.y));
+        Vector3 player_point = Vector3Subtract(*player->position, (Vector3){0, player->height/2, 0});
+
+        bool collision_cur = CheckCollisionBoxSphere(blocks[i].bounds, player_point, player->height/2);
+        bool collision_step = CheckCollisionBoxSphere(blocks[i].bounds, 
+                                                    Vector3Add(player_point, move_vec), player->height/2);
+        // Collision on this frame
+        if (!collision_cur && collision_step) {
+            dr = Vector3Zero();
+            break;
+        }
+
+        
+    }
+
+
     UpdateCameraPro(player->camera, dr, rot, 0); 
 
     // Handle Terrain collision
     Vector3 player_pos = Vector3Transform(*player->position, MatrixInvert(terrain.model->transform));
+    int cols = (int)(terrain.width*terrain.resolution);
+    int rows = (int)(terrain.length*terrain.resolution);
     float mesh_height = get_terrain_height(player_pos.x, player_pos.z, terrain.mesh->vertices,
-                                    terrain.length, terrain.width, 1);
-    
+                                    rows, cols, 1/terrain.resolution);
     // subtract epsilon for more lenient jumping
     float epsilon = 1;
-    floor = mesh_height != -1 && player_pos.y - player->height - epsilon <= mesh_height; 
-    char *text = floor == 1 ? "true" : "false";
-    sprintf(debug, "%s", text);
-
+    
+    // not on block
+    if (!floor) {
+        floor = mesh_height != -1 && player_pos.y - player->height - epsilon <= mesh_height; 
+    }
     if (mesh_height != -1 && player_pos.y - player->height <= mesh_height) {
         float y_move = mesh_height + player->height - player->position->y; 
         player_move_position(player,(Vector3){0, y_move, 0});
+    } 
+    
+    char *text = floor == 1 ? "true" : "false";
+    sprintf(debug, "%s", text);
+    if (floor){
         player->vel_y = 0;
     } else {
         player->vel_y -= GRAVITY*dt;
@@ -179,58 +222,54 @@ void move_player(Player *player, Terrain terrain, float dt, float dude_speed) {
     if (IsKeyPressed(KEY_J)) {
         jump_force = jump_force == JUMP ? JUMP*3 : JUMP;
     }
-    if (floor && IsKeyPressed(KEY_SPACE)) {
+    if (floor && IsKeyDown(KEY_SPACE)) {
         player->vel_y = jump_force;
     }
-
-
+    
     player_move_position(player, (Vector3){0,player->vel_y*dt, 0});
     
 }
 
 int main(void)
 {
-    const int screenWidth = 1280;
-    const int screenHeight = 720;
-
     debug = malloc(255*sizeof(char));
 
-    InitWindow(screenWidth, screenHeight, "EPIC MAN");
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "EPIC MAN");
     //SetTargetFPS(120);
-    rlDisableBackfaceCulling();
 
     // Create the mesh
-    int width = 400, length = 400;
-    int max_height = 75;
-    float scale = 1;
+    int width = 800, length = 800;
+    int max_height = width/4;
+    float resolution = 0.5;
     Image image;
     Mesh plane;
     Model model; 
 
-    image = my_perlin_image(width, length, GetRandomValue(0, 10000), GetRandomValue(0, 10000), 2, 2, 0.5, 6);
+    image = my_perlin_image((int)(width*resolution), (int)(length*resolution), GetRandomValue(0, 10000), GetRandomValue(0, 10000), 2, 2, 0.5, 6);
     plane = GenMeshHeightmap(image, (Vector3){width, max_height, length});
     model = LoadModelFromMesh(plane);
     
     Image mario = LoadImage("res/mario.png");
     mario = darken_image_from_noise(image, mario);
     model.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = LoadTextureFromImage(mario);    
-    model.transform = MatrixTranslate(-width*scale/2, 0, -length*scale/2);
+    model.transform = MatrixTranslate(-width/2, 0, -length/2);
 
     Terrain terrain = {
         .model = &model,
         .mesh = &plane,
         .width = width,
-        .length = length
+        .length = length,
+        .resolution = resolution
     };
 
-    Block blocks[255];
+    Block blocks[1024];
     int count = 0;
 
     Texture color_map = LoadTextureFromImage(image);
 
     Camera camera = {0};
     camera.position = (Vector3){0.0f, max_height, -1.0f}; // Forward vector is zero if target (x,z) is same
-    camera.target = (Vector3){0.0f,  max_height/2, 0.0f};
+    camera.target = (Vector3){0.0f,  max_height, 0.0f};
     camera.up = (Vector3){0.0f, 1.0f, 0.0f};
     camera.fovy = 60.0f;
     // camera.type = CAMERA_PERSPECTIVE;
@@ -240,6 +279,7 @@ int main(void)
     player.height = 8;
     player.position = &camera.position;
 
+    rlSetLineWidth(10);
     DisableCursor();
     const float dude_speed = 10;
     float speed;
@@ -247,40 +287,79 @@ int main(void)
     {
         float dt = GetFrameTime();
 
-        // Player
-        move_player(&player, terrain, dt, dude_speed);
+        // Player Stuff
+        move_player(&player, terrain, blocks, count, dt, dude_speed);
 
         Ray ray;
         ray.position = camera.position;
         ray.direction = GetCameraForward(&camera);
 
         Vector3 collision;
-        bool collided = collide_with_heightmap(ray, &collision, image, max_height,
-                            (Vector3){-width*scale/2, 0, -length*scale/2});
-
+        bool collided = false;
+        int block_index = -1;
+        
+        RayCollision closest = {0}; 
+        for (int i = 0; i < count; i++) {
+            RayCollision ray_col = GetRayCollisionBox(ray, blocks[i].bounds);
+            if (ray_col.hit){
+                if (!collided) {
+                    collided = true;
+                    closest = ray_col;
+                    block_index = i;
+                    continue;
+                }
+                float v1 = Vector3Distance(*player.position, closest.point);
+                float v2 = Vector3Distance(*player.position, ray_col.point);
+                if (v2 < v1) {
+                    closest = ray_col;
+                    block_index = i;   
+                }  
+            }
+        }
+        if (collided) {
+            collision = Vector3Add(Vector3Scale(closest.normal, 2.5), closest.point); 
+        } else {
+            collided = raycast_heightmap(ray, &collision, image, max_height,
+                                        terrain.resolution,(Vector3){-width/2, 0, -length/2});
+            if (collided) collision.y += 2;
+        }
+        
         if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && collided){
-            blocks[count++] = (Block){collision, (Vector3){4, 4, 4}};
+            Vector3 size = (Vector3){5, 5, 5};
+            BoundingBox bounds =  {Vector3Subtract(collision,(Vector3){size.x/2, size.y/2, size.z/2}),
+                                   Vector3Add(collision,(Vector3){size.x/2, size.y/2, size.z/2})};
+            Color color = {GetRandomValue(0,255),GetRandomValue(0,255),GetRandomValue(0,255),255};
+            blocks[count++] = (Block){collision, size, bounds, color};
+        } else if (collided && block_index != -1 && IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+            blocks[block_index] = (Block){0};
         }
 
         BeginDrawing();
         {
             ClearBackground(SKYBLUE);
+            // ---3D----
             BeginMode3D(camera);
+        
             DrawModel(model, Vector3Zero(), 1, WHITE);
-
-            DrawSphere(collision, 4, RED);
+            //DrawModelWires(model, Vector3Zero(), 1, WHITE);
+            
             for (int i = 0; i < count; i++) {
-                DrawSphere(blocks[i].pos, blocks[i].size.x, RED);
+                // Goofy check for empty struct
+                if (blocks[i].size.x) {
+                    DrawCubeV(blocks[i].pos, blocks[i].size, blocks[i].color);
+                }
             }
             EndMode3D();
             
+            // ---2D---
             DrawText(TextFormat("Position (%.1f, %.1f)", player.position->x, player.position->z), 10, 40, 20, BLUE);
             DrawText(TextFormat("ON FLOOR: %s", debug), 10, 70, 20, BLUE);
             DrawText(TextFormat("Raycast: (%f, %f, %f)", collision.x, collision.y, collision.z),
                    10, 100, 20, BLUE);
             DrawFPS(10, 10);
             float texture_scale = 200.0/width;
-            DrawTextureEx(color_map, (Vector2){screenWidth-color_map.width*texture_scale, 0}, 0, texture_scale, WHITE);
+            DrawCircle(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, 2, WHITE);
+            DrawTextureEx(color_map, (Vector2){SCREEN_WIDTH-color_map.width*texture_scale, 0}, 0, texture_scale, WHITE);
         }
         EndDrawing();
     }
