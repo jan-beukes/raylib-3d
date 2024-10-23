@@ -15,6 +15,7 @@
 
 #define GRAVITY 100.0
 #define JUMP 60
+#define BLOCK_SIZE 5
 
 typedef struct Player {
     float height;
@@ -34,10 +35,9 @@ typedef struct Terrain {
 
 typedef struct Block {
     Vector3 pos;
-    Vector3 size;
     BoundingBox bounds;
-    Color color;
-
+    int texture_id;
+    bool active;
 } Block;
 
 char *debug;
@@ -162,6 +162,8 @@ void move_player(Player *player, Terrain terrain, Block *blocks, int block_count
 
     // Block Collsion
     for (int i = 0; i < block_count; i++) {
+        if (!blocks[i].active) continue;
+
         // Top collision
         Vector3 feet_pos = Vector3Add(Vector3Subtract(*player->position, (Vector3){0, player->height, 0}),
                                                 (Vector3){0,player->vel_y*dt, 0});
@@ -188,7 +190,6 @@ void move_player(Player *player, Terrain terrain, Block *blocks, int block_count
 
         
     }
-
 
     UpdateCameraPro(player->camera, dr, rot, 0); 
 
@@ -233,14 +234,14 @@ void move_player(Player *player, Terrain terrain, Block *blocks, int block_count
 int main(void)
 {
     debug = malloc(255*sizeof(char));
-
+    SetTraceLogLevel(LOG_WARNING);
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "EPIC MAN");
     //SetTargetFPS(120);
 
     // Create the mesh
-    int width = 800, length = 800;
+    int width = 1200, length = 1200;
     int max_height = width/4;
-    float resolution = 0.5;
+    const float resolution = 1;
     Image image;
     Mesh plane;
     Model model; 
@@ -249,7 +250,7 @@ int main(void)
     plane = GenMeshHeightmap(image, (Vector3){width, max_height, length});
     model = LoadModelFromMesh(plane);
     
-    Image mario = LoadImage("res/mario.png");
+    Image mario = LoadImage("res/tough_grass.png");
     mario = darken_image_from_noise(image, mario);
     model.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = LoadTextureFromImage(mario);    
     model.transform = MatrixTranslate(-width/2, 0, -length/2);
@@ -264,7 +265,14 @@ int main(void)
 
     Block blocks[1024];
     int count = 0;
-
+    int current_texture = 0;
+    Texture block_textures[2] = {LoadTexture("res/floor.png"), LoadTexture("res/wall1.png")};
+    int texture_count = 2;
+    Mesh block_mesh = GenMeshCube(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+    Model block_model = LoadModelFromMesh(block_mesh);
+    block_model.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = block_textures[0];
+    
+    // block_materials[1].maps[MATERIAL_MAP_ALBEDO].texture = LoadTexture("res/wall1.png");
     Texture color_map = LoadTextureFromImage(image);
 
     Camera camera = {0};
@@ -279,7 +287,6 @@ int main(void)
     player.height = 8;
     player.position = &camera.position;
 
-    rlSetLineWidth(10);
     DisableCursor();
     const float dude_speed = 10;
     float speed;
@@ -300,6 +307,8 @@ int main(void)
         
         RayCollision closest = {0}; 
         for (int i = 0; i < count; i++) {
+            if (!blocks[i].active) continue;
+            
             RayCollision ray_col = GetRayCollisionBox(ray, blocks[i].bounds);
             if (ray_col.hit){
                 if (!collided) {
@@ -324,15 +333,23 @@ int main(void)
             if (collided) collision.y += 2;
         }
         
-        if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && collided){
-            Vector3 size = (Vector3){5, 5, 5};
-            BoundingBox bounds =  {Vector3Subtract(collision,(Vector3){size.x/2, size.y/2, size.z/2}),
-                                   Vector3Add(collision,(Vector3){size.x/2, size.y/2, size.z/2})};
-            Color color = {GetRandomValue(0,255),GetRandomValue(0,255),GetRandomValue(0,255),255};
-            blocks[count++] = (Block){collision, size, bounds, color};
-        } else if (collided && block_index != -1 && IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
-            blocks[block_index] = (Block){0};
+        if (IsKeyPressed(KEY_ONE)){
+            current_texture = 0;
+        } else if (IsKeyPressed(KEY_TWO)) {
+           current_texture = 1;
         }
+        
+        if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && collided){
+            BoundingBox bounds =  {Vector3Subtract(collision,(Vector3){BLOCK_SIZE/2, BLOCK_SIZE/2, BLOCK_SIZE/2}),
+                                   Vector3Add(collision,(Vector3){BLOCK_SIZE/2, BLOCK_SIZE/2, BLOCK_SIZE/2})};
+            blocks[count++] = (Block){collision, bounds, current_texture, true};
+
+        } else if (collided && block_index != -1 && IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+            printf("remove %d\n", block_index);
+            blocks[block_index].active = false;
+        }
+
+
 
         BeginDrawing();
         {
@@ -341,23 +358,25 @@ int main(void)
             BeginMode3D(camera);
         
             DrawModel(model, Vector3Zero(), 1, WHITE);
-            //DrawModelWires(model, Vector3Zero(), 1, WHITE);
             
             for (int i = 0; i < count; i++) {
-                // Goofy check for empty struct
-                if (blocks[i].size.x) {
-                    DrawCubeV(blocks[i].pos, blocks[i].size, blocks[i].color);
+                if (blocks[i].active) {
+                    block_model.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = block_textures[blocks[i].texture_id];
+                    DrawModel(block_model, blocks[i].pos, 1, WHITE);
                 }
             }
             EndMode3D();
             
             // ---2D---
-            DrawText(TextFormat("Position (%.1f, %.1f)", player.position->x, player.position->z), 10, 40, 20, BLUE);
-            DrawText(TextFormat("ON FLOOR: %s", debug), 10, 70, 20, BLUE);
-            DrawText(TextFormat("Raycast: (%f, %f, %f)", collision.x, collision.y, collision.z),
-                   10, 100, 20, BLUE);
             DrawFPS(10, 10);
-            float texture_scale = 200.0/width;
+            //Text
+            DrawText(TextFormat("Position (%.1f, %.1f)", player.position->x, player.position->z), 10, 40, 20, GREEN);
+            DrawText(TextFormat("ON FLOOR: %s", debug), 10, 70, 20, GREEN);
+            DrawText(TextFormat("Raycast: (%.1f, %.1f, %.1f)", collision.x, collision.y, collision.z),
+                   10, 100, 20, GREEN);
+            DrawText(TextFormat("Blocks: %d", count), 10, 130, 20, GREEN);
+
+            float texture_scale = 200.0/(width*resolution);
             DrawCircle(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, 2, WHITE);
             DrawTextureEx(color_map, (Vector2){SCREEN_WIDTH-color_map.width*texture_scale, 0}, 0, texture_scale, WHITE);
         }

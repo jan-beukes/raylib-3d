@@ -11,6 +11,7 @@
         "sd-journal.h": "c",
         "stb_perlin.h": "c",
         "stdlib.h": "c",
-        "perlin.h": "c"
+        "perlin.h": "c",
+        "format": "c"
     }
 }
