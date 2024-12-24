@@ -6,7 +6,7 @@ LFLAGS = -lm -lraylib -lpthread -ldl
 SRCS = $(wildcard src/*.c) # wildcard function read all mathing the expression
 OBJS = $(patsubst src/%.c, obj/%.o,$(SRCS)) # $(patsubst <pattern>, <replacement>, <text>)
 
-all: main
+all: terrain
 
 main: $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) -o $@ $(LFLAGS)
@@ -14,8 +14,8 @@ main: $(OBJS)
 obj/%.o: src/%.c 
 	$(CC) $(CFLAGS) -c $< -o $@ 
 
-jan: terrain/*.c
-	$(CC) $(CFLAGS) -o $@ terrain/*.c -lraylib -lm
+terrain: terrain/*.c
+	$(CC) $(CFLAGS) terrain/*.c -lraylib -lm
 
 run: all
 	./main
