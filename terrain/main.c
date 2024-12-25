@@ -275,23 +275,24 @@ int main(void) {
   debug = malloc(255 * sizeof(char));
   // SetTraceLogLevel(LOG_WARNING);
   InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "EPIC MAN");
-  // SetTargetFPS(120);
+  SetTargetFPS(144);
 
   // Create the mesh
   int width = 1200, length = 1200;
   int max_height = width / 4;
-  const float resolution = 0.2;
+  const float resolution = 0.3;
   Image image;
   Mesh plane;
   Model model;
 
-  Shader terrain_shader = LoadShader("terrain/terrain.vs", "terrain/tile.fs");
+  Shader terrain_shader = LoadShader("terrain/base.vs", "terrain/tile.fs");
+  Shader block_shader = LoadShader("terrain/base.vs", NULL);
   SetShaderValue(terrain_shader, GetShaderLocation(terrain_shader, "maxHeight"),
                  &max_height, SHADER_UNIFORM_INT);
 
   image = my_perlin_image((int)(width * resolution), (int)(length * resolution),
                           GetRandomValue(0, 10000), GetRandomValue(0, 10000), 2,
-                          2, 0.5, 6);
+                          2, 0.4, 6);
   plane = GenMeshHeightmap(image, (Vector3){width, max_height, length});
   model = LoadModelFromMesh(plane);
 
@@ -321,6 +322,7 @@ int main(void) {
   Model block_model = LoadModelFromMesh(block_mesh);
   block_model.materials[0].maps[MATERIAL_MAP_ALBEDO].texture =
       block_textures[0];
+  block_model.materials[0].shader = block_shader;
 
   // block_materials[1].maps[MATERIAL_MAP_ALBEDO].texture =
   // LoadTexture("res/wall1.png");

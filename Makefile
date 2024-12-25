@@ -14,7 +14,7 @@ main: $(OBJS)
 obj/%.o: src/%.c 
 	$(CC) $(CFLAGS) -c $< -o $@ 
 
-terrain: terrain/*.c
+terrain: terrain/main.c
 	$(CC) $(CFLAGS) terrain/*.c -lraylib -lm
 
 run: all
