@@ -45,6 +45,44 @@ typedef struct Block {
 char *debug;
 int jump_force = JUMP;
 
+RenderTexture2D LoadRenderTextureDepthTex(int width, int height)
+{
+    RenderTexture2D target = { 0 };
+
+    target.id = rlLoadFramebuffer(); // Load an empty framebuffer
+
+    if (target.id > 0)
+    {
+        rlEnableFramebuffer(target.id);
+
+        // Create color texture (default to RGBA)
+        target.texture.id = rlLoadTexture(0, width, height, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, 1);
+        target.texture.width = width;
+        target.texture.height = height;
+        target.texture.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+        target.texture.mipmaps = 1;
+
+        // Create depth texture buffer (instead of raylib default renderbuffer)
+        target.depth.id = rlLoadTextureDepth(width, height, false);
+        target.depth.width = width;
+        target.depth.height = height;
+        target.depth.format = 19;       //DEPTH_COMPONENT_24BIT?
+        target.depth.mipmaps = 1;
+
+        // Attach color texture and depth texture to FBO
+        rlFramebufferAttach(target.id, target.texture.id, RL_ATTACHMENT_COLOR_CHANNEL0, RL_ATTACHMENT_TEXTURE2D, 0);
+        rlFramebufferAttach(target.id, target.depth.id, RL_ATTACHMENT_DEPTH, RL_ATTACHMENT_TEXTURE2D, 0);
+
+        // Check if fbo is complete with attachments (valid)
+        if (rlFramebufferComplete(target.id)) TRACELOG(LOG_INFO, "FBO: [ID %i] Framebuffer object created successfully", target.id);
+
+        rlDisableFramebuffer();
+    }
+    else TRACELOG(LOG_WARNING, "FBO: Framebuffer object can not be created");
+
+    return target;
+}
+
 Image darken_image_from_noise(Image noise_image, Image image) {
   ImageResize(&image, noise_image.width, noise_image.height);
 
@@ -52,6 +90,7 @@ Image darken_image_from_noise(Image noise_image, Image image) {
   Color *image_pixels = LoadImageColors(image);
   Color *data = calloc(image.width * image.height, sizeof(Color));
   int min_color_value = 30;
+
 
   for (int y = 0; y < image.height; y++) {
     for (int x = 0; x < image.width; x++) {
@@ -273,7 +312,7 @@ void move_player(Player *player, Terrain *terrain, Block *blocks, int block_coun
 
 int main(void) {
   debug = malloc(255 * sizeof(char));
-  // SetTraceLogLevel(LOG_WARNING);
+  SetTraceLogLevel(LOG_WARNING);
   InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "EPIC MAN");
   SetTargetFPS(144);
 
@@ -285,10 +324,13 @@ int main(void) {
   Mesh plane;
   Model model;
 
-  Shader terrain_shader = LoadShader("terrain/base.vs", "terrain/tile.fs");
-  Shader block_shader = LoadShader("terrain/base.vs", NULL);
-  SetShaderValue(terrain_shader, GetShaderLocation(terrain_shader, "maxHeight"),
-                 &max_height, SHADER_UNIFORM_INT);
+  Shader terrain_shader = LoadShader("terrain/base.vert", "terrain/base.frag");
+  Shader block_shader = LoadShader("terrain/base.vert", "terrain/base.frag");
+  Shader sun_shader = LoadShader(NULL, "terrain/sun.frag");
+
+  int t1 = 20, t2 = 1;
+  SetShaderValue(terrain_shader, GetShaderLocation(terrain_shader, "tile"), &t1, SHADER_UNIFORM_INT);
+  SetShaderValue(block_shader, GetShaderLocation(block_shader, "tile"), &t2, SHADER_UNIFORM_INT);
 
   image = my_perlin_image((int)(width * resolution), (int)(length * resolution),
                           GetRandomValue(0, 10000), GetRandomValue(0, 10000), 2,
@@ -305,12 +347,14 @@ int main(void) {
   model.materials->shader = terrain_shader;
   model.transform = MatrixTranslate(-width / 2, 0, -length / 2);
 
-  Terrain terrain = {.model = &model,
-                     .mesh = &plane,
-                     .width = width,
-                     .length = length,
-                     .height = max_height,
-                     .resolution = resolution};
+  Terrain terrain = {
+    .model = &model,
+     .mesh = &plane,
+     .width = width,
+     .length = length,
+     .height = max_height,
+     .resolution = resolution
+  };
 
   Block blocks[1024];
   int count = 0;
@@ -341,6 +385,8 @@ int main(void) {
   player.camera = &camera;
   player.height = 8;
   player.position = &camera.position;
+
+  RenderTexture frame_buffer = LoadRenderTextureDepthTex(SCREEN_WIDTH, SCREEN_HEIGHT);
 
   DisableCursor();
   const float dude_speed = 10;
@@ -412,6 +458,7 @@ int main(void) {
 
     BeginDrawing();
     {
+      BeginTextureMode(frame_buffer);
       ClearBackground(SKYBLUE);
       // ---3D----
       BeginMode3D(camera);
@@ -420,12 +467,24 @@ int main(void) {
 
       for (int i = 0; i < count; i++) {
         if (blocks[i].active) {
-          block_model.materials[0].maps[MATERIAL_MAP_ALBEDO].texture =
+          block_model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture =
               block_textures[blocks[i].texture_id];
           DrawModel(block_model, blocks[i].pos, 1, WHITE);
         }
       }
       EndMode3D();
+      EndTextureMode();
+
+      // drawing frame buffer
+
+      // Post process
+      SetShaderValueMatrix(sun_shader, GetShaderLocation(sun_shader, "view"), GetCameraMatrix(camera));
+      SetShaderValueMatrix(sun_shader, GetShaderLocation(sun_shader, "projection"),
+                           GetCameraProjectionMatrix(&camera, (float)SCREEN_WIDTH / SCREEN_HEIGHT));
+      BeginShaderMode(sun_shader);
+      Rectangle rec = {0, 0, frame_buffer.texture.width, -frame_buffer.texture.height};
+      DrawTextureRec(frame_buffer.texture, rec, (Vector2) {0, 0}, WHITE);
+      EndShaderMode();
 
       // ---2D---
       DrawFPS(10, 10);
@@ -439,8 +498,8 @@ int main(void) {
                10, 100, 20, WHITE);
       DrawText(TextFormat("Blocks: %d", count), 10, 130, 20, WHITE);
 
-      float texture_scale = 200.0 / (width * resolution);
       DrawCircle(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 2, WHITE);
+      float texture_scale = 200.0 / (width * resolution);
       DrawTextureEx(
           color_map,
           (Vector2){SCREEN_WIDTH - color_map.width * texture_scale, 0}, 0,
