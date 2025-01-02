@@ -5,9 +5,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+
 #define GRAY_VALUE(c) ((float)(c.r + c.g + c.b) / 3.0f)
-#define MIN(X, Y) (X) < (Y) ? (X) : (Y)
-#define MAX(X, Y) (X) > (Y) ? (X) : (Y)
+#define MIN(X, Y) ({ __typeof__(X) _X = X; \
+                    __typeof__(Y) _Y = Y; \
+                   (_X) < (_Y) ? (_X) : (_Y); })
+#define MAX(X, Y) ({ __typeof__(X) _X = X; \
+                    __typeof__(Y) _Y = Y; \
+                   (_X) > (_Y) ? (_X) : (_Y); })
 
 Image my_perlin_image(int width, int height, int x_off, int y_off, float scale, float lacunarity, float gain, int octaves);
 
@@ -45,6 +50,7 @@ typedef struct Block {
 char *debug;
 int jump_force = JUMP;
 
+// depth texture instead of render buffer
 RenderTexture2D LoadRenderTextureDepthTex(int width, int height)
 {
     RenderTexture2D target = { 0 };
@@ -66,7 +72,7 @@ RenderTexture2D LoadRenderTextureDepthTex(int width, int height)
         target.depth.id = rlLoadTextureDepth(width, height, false);
         target.depth.width = width;
         target.depth.height = height;
-        target.depth.format = 19;       //DEPTH_COMPONENT_24BIT?
+        target.depth.format = PIXELFORMAT_COMPRESSED_ETC2_RGB;
         target.depth.mipmaps = 1;
 
         // Attach color texture and depth texture to FBO
@@ -81,34 +87,6 @@ RenderTexture2D LoadRenderTextureDepthTex(int width, int height)
     else TRACELOG(LOG_WARNING, "FBO: Framebuffer object can not be created");
 
     return target;
-}
-
-Image darken_image_from_noise(Image noise_image, Image image) {
-  ImageResize(&image, noise_image.width, noise_image.height);
-
-  Color *noise_pixels = LoadImageColors(noise_image);
-  Color *image_pixels = LoadImageColors(image);
-  Color *data = calloc(image.width * image.height, sizeof(Color));
-  int min_color_value = 30;
-
-
-  for (int y = 0; y < image.height; y++) {
-    for (int x = 0; x < image.width; x++) {
-      Color image_color = image_pixels[y * image.width + x];
-      float noise_value = noise_pixels[y * image.width + x].r / 255.0;
-      Color new_color = {
-          MIN(min_color_value + image_color.r * noise_value, 255),
-          MIN(min_color_value + image_color.g * noise_value, 255),
-          MIN(min_color_value + image_color.b * noise_value, 255), 255};
-      data[y * image.width + x] = new_color;
-    }
-  }
-  Image new = {.data = data,
-               .width = image.width,
-               .height = image.height,
-               .mipmaps = 1,
-               .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
-  return new;
 }
 
 void player_move_position(Player *player, Vector3 move) {
@@ -311,12 +289,24 @@ void move_player(Player *player, Terrain *terrain, Block *blocks, int block_coun
 }
 
 int main(void) {
+  // init
   debug = malloc(255 * sizeof(char));
   SetTraceLogLevel(LOG_WARNING);
   InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "EPIC MAN");
   SetTargetFPS(144);
 
-  // Create the mesh
+
+  // loading shaders
+  Shader terrain_shader = LoadShader("terrain/base.vert", "terrain/base.frag");
+  Shader block_shader = LoadShader("terrain/base.vert", "terrain/base.frag");
+  Shader sun_shader = LoadShader(NULL, "terrain/sun.frag");
+  Shader fog_shader = LoadShader(NULL, "terrain/fog.frag");
+  // tiling
+  int t1 = 20, t2 = 1;
+  SetShaderValue(terrain_shader, GetShaderLocation(terrain_shader, "tile"), &t1, SHADER_UNIFORM_INT);
+  SetShaderValue(block_shader, GetShaderLocation(block_shader, "tile"), &t2, SHADER_UNIFORM_INT);
+
+  // terrain gen
   int width = 1200, length = 1200;
   int max_height = width / 4;
   const float resolution = 0.3;
@@ -324,69 +314,63 @@ int main(void) {
   Mesh plane;
   Model model;
 
-  Shader terrain_shader = LoadShader("terrain/base.vert", "terrain/base.frag");
-  Shader block_shader = LoadShader("terrain/base.vert", "terrain/base.frag");
-  Shader sun_shader = LoadShader(NULL, "terrain/sun.frag");
-
-  int t1 = 20, t2 = 1;
-  SetShaderValue(terrain_shader, GetShaderLocation(terrain_shader, "tile"), &t1, SHADER_UNIFORM_INT);
-  SetShaderValue(block_shader, GetShaderLocation(block_shader, "tile"), &t2, SHADER_UNIFORM_INT);
-
+  // textures
   image = my_perlin_image((int)(width * resolution), (int)(length * resolution),
                           GetRandomValue(0, 10000), GetRandomValue(0, 10000), 2,
                           2, 0.4, 6);
+
+  Image grass = LoadImage("res/tough_grass.png");
+  ImageMipmaps(&grass);
+  Texture texture = LoadTextureFromImage(grass);
+  SetTextureWrap(texture, TEXTURE_WRAP_REPEAT);
+  SetTextureFilter(texture, TEXTURE_FILTER_ANISOTROPIC_16X);
+
+  // models
   plane = GenMeshHeightmap(image, (Vector3){width, max_height, length});
   model = LoadModelFromMesh(plane);
 
-  Image mario = LoadImage("res/tough_grass.png");
-  ImageMipmaps(&mario);
-  Texture texture = LoadTextureFromImage(mario);
-  SetTextureWrap(texture, TEXTURE_WRAP_REPEAT);
-  SetTextureFilter(texture, TEXTURE_FILTER_ANISOTROPIC_16X);
   model.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = texture;
   model.materials->shader = terrain_shader;
   model.transform = MatrixTranslate(-width / 2, 0, -length / 2);
 
   Terrain terrain = {
-    .model = &model,
-     .mesh = &plane,
-     .width = width,
-     .length = length,
-     .height = max_height,
-     .resolution = resolution
+      .model = &model,
+      .mesh = &plane,
+      .width = width,
+      .length = length,
+      .height = max_height,
+      .resolution = resolution
   };
 
   Block blocks[1024];
   int count = 0;
   int current_texture = 0;
-  Texture block_textures[2] = {LoadTexture("res/floor.png"),
-                               LoadTexture("res/wall1.png")};
+  Texture block_textures[2] = {LoadTexture("res/floor.png"), LoadTexture("res/wall1.png")};
   int texture_count = 2;
   Mesh block_mesh = GenMeshCube(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
   Model block_model = LoadModelFromMesh(block_mesh);
-  block_model.materials[0].maps[MATERIAL_MAP_ALBEDO].texture =
-      block_textures[0];
+  block_model.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = block_textures[0];
   block_model.materials[0].shader = block_shader;
 
-  // block_materials[1].maps[MATERIAL_MAP_ALBEDO].texture =
-  // LoadTexture("res/wall1.png");
-  Texture color_map = LoadTextureFromImage(image);
-
   Camera camera = {0};
-  camera.position =
-      (Vector3){0.0f, max_height,
-                -1.0f}; // Forward vector is zero if target (x,z) is same
+  camera.position = (Vector3){0.0f, max_height, -1.0f};
   camera.target = (Vector3){0.0f, max_height, 0.0f};
   camera.up = (Vector3){0.0f, 1.0f, 0.0f};
   camera.fovy = 60.0f;
-  // camera.type = CAMERA_PERSPECTIVE;
+  camera.projection = CAMERA_PERSPECTIVE;
 
   Player player = {0};
   player.camera = &camera;
   player.height = 8;
   player.position = &camera.position;
 
-  RenderTexture frame_buffer = LoadRenderTextureDepthTex(SCREEN_WIDTH, SCREEN_HEIGHT);
+  // frame buffers
+  RenderTexture fbo1 = LoadRenderTextureDepthTex(SCREEN_WIDTH, SCREEN_HEIGHT);
+  RenderTexture fbo2 = LoadRenderTextureDepthTex(SCREEN_WIDTH, SCREEN_HEIGHT);
+
+  float fog_density = 0.4f;
+  Vector3 fog_color = {0.6f, 0.6f, 0.6f};
+  SetShaderValue(fog_shader, GetShaderLocation(fog_shader, "fogColor"), (float *)&fog_color, SHADER_UNIFORM_VEC3);
 
   DisableCursor();
   const float dude_speed = 10;
@@ -397,6 +381,7 @@ int main(void) {
     // Player Stuff
     move_player(&player, &terrain, blocks, count, dt, dude_speed);
 
+    // Blocks
     Ray ray;
     ray.position = camera.position;
     ray.direction = GetCameraForward(&camera);
@@ -436,6 +421,12 @@ int main(void) {
         collision.y += 2;
     }
 
+    //---Input---
+
+    float scroll = GetMouseWheelMove();
+    if (scroll != 0) {
+      fog_density = MAX(0, MIN(fog_density + scroll * 0.05, 2.0));
+    }
     if (IsKeyPressed(KEY_ONE)) {
       current_texture = 0;
     } else if (IsKeyPressed(KEY_TWO)) {
@@ -444,21 +435,19 @@ int main(void) {
 
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && collided) {
       BoundingBox bounds = {
-          Vector3Subtract(collision, (Vector3){BLOCK_SIZE / 2, BLOCK_SIZE / 2,
-                                               BLOCK_SIZE / 2}),
-          Vector3Add(collision, (Vector3){BLOCK_SIZE / 2, BLOCK_SIZE / 2,
-                                          BLOCK_SIZE / 2})};
+          Vector3Subtract(collision, (Vector3){BLOCK_SIZE / 2, BLOCK_SIZE / 2, BLOCK_SIZE / 2}),
+          Vector3Add(collision, (Vector3){BLOCK_SIZE / 2, BLOCK_SIZE / 2, BLOCK_SIZE / 2})
+      };
       blocks[count++] = (Block){collision, bounds, current_texture, true};
 
-    } else if (collided && block_index != -1 &&
-               IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+    } else if (collided && block_index != -1 && IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
       printf("remove %d\n", block_index);
       blocks[block_index].active = false;
     }
 
     BeginDrawing();
     {
-      BeginTextureMode(frame_buffer);
+      BeginTextureMode(fbo1);
       ClearBackground(SKYBLUE);
       // ---3D----
       BeginMode3D(camera);
@@ -475,35 +464,54 @@ int main(void) {
       EndMode3D();
       EndTextureMode();
 
-      // drawing frame buffer
-
       // Post process
+      Rectangle rec = {0, 0, fbo1.texture.width, -fbo1.texture.height};
+
+      // sun
       SetShaderValueMatrix(sun_shader, GetShaderLocation(sun_shader, "view"), GetCameraMatrix(camera));
       SetShaderValueMatrix(sun_shader, GetShaderLocation(sun_shader, "projection"),
                            GetCameraProjectionMatrix(&camera, (float)SCREEN_WIDTH / SCREEN_HEIGHT));
+      BeginTextureMode(fbo2);
       BeginShaderMode(sun_shader);
-      Rectangle rec = {0, 0, frame_buffer.texture.width, -frame_buffer.texture.height};
-      DrawTextureRec(frame_buffer.texture, rec, (Vector2) {0, 0}, WHITE);
+
+      DrawTextureRec(fbo1.texture, rec, (Vector2){0, 0}, WHITE);
+
       EndShaderMode();
+      EndTextureMode();
+
+      // fog
+      SetShaderValue(fog_shader, GetShaderLocation(fog_shader, "fogDensity"), &fog_density, SHADER_UNIFORM_FLOAT);
+      BeginTextureMode(fbo1);
+      BeginShaderMode(fog_shader);
+
+      SetShaderValueTexture(fog_shader, GetShaderLocation(fog_shader, "depthTexture"), fbo1.depth);
+      DrawTextureRec(fbo2.texture, rec, (Vector2){0, 0}, WHITE);
+
+      EndShaderMode();
+      EndTextureMode();
+
+      DrawTextureRec(fbo1.texture, rec, (Vector2){0, 0}, WHITE);
 
       // ---2D---
       DrawFPS(10, 10);
       // Text
       DrawText(TextFormat("Position (%.1f, %.1f, %.1f)", player.position->x,
                           player.position->z, player.position->y),
-               10, 40, 20, WHITE);
-      DrawText(TextFormat("ON FLOOR: %s", debug), 10, 70, 20, WHITE);
+               10, 40, 20, BLACK);
+      DrawText(TextFormat("ON FLOOR: %s", debug), 10, 70, 20, BLACK);
       DrawText(TextFormat("Raycast: (%.1f, %.1f, %.1f)", collision.x,
                           collision.y, collision.z),
-               10, 100, 20, WHITE);
-      DrawText(TextFormat("Blocks: %d", count), 10, 130, 20, WHITE);
+               10, 100, 20, BLACK);
+      DrawText(TextFormat("Blocks: %d", count), 10, 130, 20, BLACK);
 
-      DrawCircle(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 2, WHITE);
+      DrawCircle(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 2, BLACK);
       float texture_scale = 200.0 / (width * resolution);
-      DrawTextureEx(
-          color_map,
-          (Vector2){SCREEN_WIDTH - color_map.width * texture_scale, 0}, 0,
-          texture_scale, WHITE);
+
+      float rec_w = SCREEN_WIDTH / 6.0;
+      Rectangle fog_rect = {5, SCREEN_HEIGHT - 30, rec_w * (fog_density / 2.0), 20};
+      DrawRectangleRounded(fog_rect, 3, 6, RED);
+      fog_rect.width = rec_w;
+      DrawRectangleRoundedLines(fog_rect, 5, 5, BLACK);
     }
     EndDrawing();
   }
