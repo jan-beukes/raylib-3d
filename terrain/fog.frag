@@ -20,11 +20,9 @@ void main() {
     vec3 texColor = texture(texture0, fragTexCoord).rgb;
     float z = linearizeDepth(depth);
 
-    float fogValue = z * fogDensity;
+    float fogValue = 1.0 / pow(2, pow(z * fogDensity, 2));
 
-    vec3 fog = fogColor * fogValue;
-    vec3 scene = texColor * (1.0 - fogValue / 2);
-    vec3 result = fog + scene;
+    vec3 result = mix(fogColor, texColor, fogValue);
 
     fragColor = vec4(result, 1.0);
 }

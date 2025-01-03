@@ -368,6 +368,7 @@ int main(void) {
   RenderTexture fbo1 = LoadRenderTextureDepthTex(SCREEN_WIDTH, SCREEN_HEIGHT);
   RenderTexture fbo2 = LoadRenderTextureDepthTex(SCREEN_WIDTH, SCREEN_HEIGHT);
 
+#define FOG_MAX 3.0f
   float fog_density = 0.4f;
   Vector3 fog_color = {0.6f, 0.6f, 0.6f};
   SetShaderValue(fog_shader, GetShaderLocation(fog_shader, "fogColor"), (float *)&fog_color, SHADER_UNIFORM_VEC3);
@@ -422,10 +423,9 @@ int main(void) {
     }
 
     //---Input---
-
     float scroll = GetMouseWheelMove();
     if (scroll != 0) {
-      fog_density = MAX(0, MIN(fog_density + scroll * 0.05, 2.0));
+      fog_density = MAX(0, MIN(fog_density + scroll * 0.05, FOG_MAX));
     }
     if (IsKeyPressed(KEY_ONE)) {
       current_texture = 0;
@@ -508,7 +508,7 @@ int main(void) {
       float texture_scale = 200.0 / (width * resolution);
 
       float rec_w = SCREEN_WIDTH / 6.0;
-      Rectangle fog_rect = {5, SCREEN_HEIGHT - 30, rec_w * (fog_density / 2.0), 20};
+      Rectangle fog_rect = {5, SCREEN_HEIGHT - 30, rec_w * (fog_density / FOG_MAX), 20};
       DrawRectangleRounded(fog_rect, 3, 6, RED);
       fog_rect.width = rec_w;
       DrawRectangleRoundedLines(fog_rect, 5, 5, BLACK);
