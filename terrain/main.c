@@ -2,7 +2,9 @@
 #include <raymath.h>
 #include <rcamera.h>
 #include <rlgl.h>
+#include <stddef.h>
 #include <stdio.h>
+#include <limits.h>
 #include <stdlib.h>
 
 
@@ -197,6 +199,47 @@ bool raycast_heightmap(Ray ray, Vector3 *collision, Image heightmap_image,
   return false;
 }
 
+Mesh GenMeshQuad(float size) {
+    Mesh mesh = { 0 };
+
+    float vertices[] = {
+      -size, -size, 0.0f,
+      size, -size, 0.0f,
+      size, size, 0.0f,
+      -size, size, 0.0f,
+    };
+    float texcoords[] = {
+      0.0f, 1.0f,
+      1.0f, 1.0f,
+      1.0f, 0.0f,
+      0.0f, 0.0f,
+    };
+    float normals[] = {
+    0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 1.0f,
+  };
+  unsigned short indices[] = {0, 1, 2, 3, 0, 2};
+
+    mesh.vertexCount = 4;
+    mesh.triangleCount = 2;
+    mesh.vertices = (float *)RL_MALLOC(mesh.vertexCount*3*sizeof(float));
+    mesh.texcoords = (float *)RL_MALLOC(mesh.vertexCount*2*sizeof(float));
+    mesh.normals = (float *)RL_MALLOC(mesh.vertexCount*3*sizeof(float));
+    mesh.indices = (unsigned short *)RL_MALLOC(mesh.triangleCount*3*sizeof(unsigned short));
+
+    memcpy(mesh.vertices, vertices, sizeof(vertices));
+    memcpy(mesh.texcoords, texcoords, sizeof(texcoords));
+    memcpy(mesh.normals, normals, sizeof(vertices));
+    memcpy(mesh.indices, indices, sizeof(indices));
+
+    UploadMesh(&mesh, false);
+
+    return mesh;
+}
+
+
 void move_player(Player *player, Terrain *terrain, Block *blocks, int block_count, float dt, float dude_speed) {
   float speed;
   bool floor = false;
@@ -291,8 +334,9 @@ void move_player(Player *player, Terrain *terrain, Block *blocks, int block_coun
 int main(void) {
   // init
   debug = malloc(255 * sizeof(char));
-  SetTraceLogLevel(LOG_WARNING);
+  //SetTraceLogLevel(LOG_WARNING);
   InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "EPIC MAN");
+  rlDisableBackfaceCulling();
   SetTargetFPS(144);
 
 
@@ -342,11 +386,18 @@ int main(void) {
       .resolution = resolution
   };
 
+  Mesh grass_quad = GenMeshQuad(3);
+  const center_height = get_terrain_height(width/2, length/2, terrain.mesh->vertices, width*resolution, length*resolution, 1 / resolution);
+  Matrix grass_transform = MatrixTranslate(0, center_height + 10, 0);
+  Texture grass_texture = LoadTexture("res/grass.png");
+  SetTextureWrap(grass_texture, TEXTURE_WRAP_CLAMP);
+  Material grass_material = LoadMaterialDefault();
+  grass_material.maps[0].texture = grass_texture;
+
   Block blocks[1024];
   int count = 0;
   int current_texture = 0;
   Texture block_textures[2] = {LoadTexture("res/floor.png"), LoadTexture("res/wall1.png")};
-  int texture_count = 2;
   Mesh block_mesh = GenMeshCube(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
   Model block_model = LoadModelFromMesh(block_mesh);
   block_model.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = block_textures[0];
@@ -375,7 +426,6 @@ int main(void) {
 
   DisableCursor();
   const float dude_speed = 10;
-  float speed;
   while (!WindowShouldClose()) {
     float dt = GetFrameTime();
 
@@ -461,6 +511,8 @@ int main(void) {
           DrawModel(block_model, blocks[i].pos, 1, WHITE);
         }
       }
+      DrawMesh(grass_quad, grass_material, grass_transform);
+
       EndMode3D();
       EndTextureMode();
 
@@ -505,7 +557,7 @@ int main(void) {
       DrawText(TextFormat("Blocks: %d", count), 10, 130, 20, BLACK);
 
       DrawCircle(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 2, BLACK);
-      float texture_scale = 200.0 / (width * resolution);
+      //float texture_scale = 200.0 / (width * resolution);
 
       float rec_w = SCREEN_WIDTH / 6.0;
       Rectangle fog_rect = {5, SCREEN_HEIGHT - 30, rec_w * (fog_density / FOG_MAX), 20};
