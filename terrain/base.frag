@@ -13,7 +13,7 @@ const float ambientValue = 0.8;
 const vec3 diffuseCol = vec3(0.4, 0.4, 0.4);
 
 void main() {
-    const vec3 lightDir = normalize(-vec3(-0.2, -0.2, -0.0));
+    const vec3 lightDir = normalize(-vec3(0.3, -0.36, 0.5));
     vec3 texColor = texture(texture0, fract(texCoord * tile)).rgb; // tile
     
     // diffuse 

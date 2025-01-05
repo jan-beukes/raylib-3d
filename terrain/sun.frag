@@ -12,13 +12,13 @@ const vec3 sunColor = vec3(1.0, 1.0, 0.6);
 const float sunSize = 0.02;
 
 void main() {
-    const vec3 lightDir = normalize(vec3(-0.2, -0.2, 0.0));
+    const vec3 lightDir = normalize(vec3(0.3, -0.36, 0.5));
 
     // Sample the scene color
     vec4 sceneColor = texture(texture0, fragTexCoord);
 
     // Compute a reference position for the sun in world space
-    vec3 sunWorldPos = -lightDir * 1000.0; // A distant point in the light's direction
+    vec3 sunWorldPos = -lightDir * 5000.0; // A distant point in the light's direction
 
     // Transform to clip space
     vec4 clipSpacePos = projection * view * vec4(sunWorldPos, 1.0);

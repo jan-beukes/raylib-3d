@@ -4,6 +4,7 @@
 #include <rlgl.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 #include <limits.h>
 #include <stdlib.h>
 
@@ -343,8 +344,10 @@ int main(void) {
   // loading shaders
   Shader terrain_shader = LoadShader("terrain/base.vert", "terrain/base.frag");
   Shader block_shader = LoadShader("terrain/base.vert", "terrain/base.frag");
-  Shader sun_shader = LoadShader(NULL, "terrain/sun.frag");
+  //Shader sun_shader = LoadShader(NULL, "terrain/sun.frag");
   Shader fog_shader = LoadShader(NULL, "terrain/fog.frag");
+  Shader skybox_shader = LoadShader("terrain/skybox.vert", "terrain/skybox.frag");
+
   // tiling
   int t1 = 20, t2 = 1;
   SetShaderValue(terrain_shader, GetShaderLocation(terrain_shader, "tile"), &t1, SHADER_UNIFORM_INT);
@@ -387,7 +390,7 @@ int main(void) {
   };
 
   Mesh grass_quad = GenMeshQuad(3);
-  const center_height = get_terrain_height(width/2, length/2, terrain.mesh->vertices, width*resolution, length*resolution, 1 / resolution);
+  const float center_height = get_terrain_height(width/2, length/2, terrain.mesh->vertices, width*resolution, length*resolution, 1 / resolution);
   Matrix grass_transform = MatrixTranslate(0, center_height + 10, 0);
   Texture grass_texture = LoadTexture("res/grass.png");
   SetTextureWrap(grass_texture, TEXTURE_WRAP_CLAMP);
@@ -418,6 +421,20 @@ int main(void) {
   // frame buffers
   RenderTexture fbo1 = LoadRenderTextureDepthTex(SCREEN_WIDTH, SCREEN_HEIGHT);
   RenderTexture fbo2 = LoadRenderTextureDepthTex(SCREEN_WIDTH, SCREEN_HEIGHT);
+
+  Model skybox = LoadModelFromMesh(GenMeshCube(1, 1, 1));
+  Image sky_images[6];
+  for (int i = 0; i < 6; i++) sky_images[i] = LoadImage(TextFormat("res/skybox/%d.jpg", i + 1));
+  const int size = sky_images[0].width;
+  Image data = GenImageColor(size, 6*size, MAGENTA);
+  for (int i = 0; i < 6; i++) ImageDraw(&data, sky_images[i], (Rectangle){0, 0, size, size},
+                                        (Rectangle){0, size*i, size, size}, WHITE);
+  TextureCubemap sky_texture = LoadTextureCubemap(data, CUBEMAP_LAYOUT_LINE_VERTICAL);
+  int loc = MATERIAL_MAP_CUBEMAP;
+  SetShaderValue(skybox_shader, GetShaderLocation(skybox_shader, "skybox"), &loc, SHADER_UNIFORM_INT);
+  skybox.materials[0].maps[MATERIAL_MAP_CUBEMAP].texture = sky_texture;
+  skybox.materials[0].shader = skybox_shader;
+
 
 #define FOG_MAX 3.0f
   float fog_density = 0.4f;
@@ -502,6 +519,12 @@ int main(void) {
       // ---3D----
       BeginMode3D(camera);
 
+      rlDisableBackfaceCulling();
+      rlDisableDepthMask();
+      DrawModel(skybox, (Vector3){0, 0, 0}, 1.0f, WHITE);
+      rlEnableBackfaceCulling();
+      rlEnableDepthMask();
+
       DrawModel(model, Vector3Zero(), 1, WHITE);
 
       for (int i = 0; i < count; i++) {
@@ -513,6 +536,7 @@ int main(void) {
       }
       DrawMesh(grass_quad, grass_material, grass_transform);
 
+
       EndMode3D();
       EndTextureMode();
 
@@ -520,16 +544,16 @@ int main(void) {
       Rectangle rec = {0, 0, fbo1.texture.width, -fbo1.texture.height};
 
       // sun
-      SetShaderValueMatrix(sun_shader, GetShaderLocation(sun_shader, "view"), GetCameraMatrix(camera));
-      SetShaderValueMatrix(sun_shader, GetShaderLocation(sun_shader, "projection"),
-                           GetCameraProjectionMatrix(&camera, (float)SCREEN_WIDTH / SCREEN_HEIGHT));
-      BeginTextureMode(fbo2);
-      BeginShaderMode(sun_shader);
-
-      DrawTextureRec(fbo1.texture, rec, (Vector2){0, 0}, WHITE);
-
-      EndShaderMode();
-      EndTextureMode();
+      /*SetShaderValueMatrix(sun_shader, GetShaderLocation(sun_shader, "view"), GetCameraMatrix(camera));*/
+      /*SetShaderValueMatrix(sun_shader, GetShaderLocation(sun_shader, "projection"),*/
+      /*                     GetCameraProjectionMatrix(&camera, (float)SCREEN_WIDTH / SCREEN_HEIGHT));*/
+      /*BeginTextureMode(fbo2);*/
+      /*BeginShaderMode(sun_shader);*/
+      /**/
+      /*DrawTextureRec(fbo1.texture, rec, (Vector2){0, 0}, WHITE);*/
+      /**/
+      /*EndShaderMode();*/
+      /*EndTextureMode();*/
 
       // fog
       SetShaderValue(fog_shader, GetShaderLocation(fog_shader, "fogDensity"), &fog_density, SHADER_UNIFORM_FLOAT);
@@ -537,7 +561,7 @@ int main(void) {
       BeginShaderMode(fog_shader);
 
       SetShaderValueTexture(fog_shader, GetShaderLocation(fog_shader, "depthTexture"), fbo1.depth);
-      DrawTextureRec(fbo2.texture, rec, (Vector2){0, 0}, WHITE);
+      DrawTextureRec(fbo1.texture, rec, (Vector2){0, 0}, WHITE);
 
       EndShaderMode();
       EndTextureMode();
